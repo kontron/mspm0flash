@@ -51,73 +51,7 @@ static void dump_data(char *prefix, uint8_t *buf, int len)
 	printf("\n");
 }
 
-int i2c_write(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len)
-{
-	struct i2c_msg messages[2];
-	struct i2c_rdwr_ioctl_data packets;
-
-	if (ioctl(fd, I2C_SLAVE_FORCE, addr) < 0) {
-		int error_code = errno;
-		printf("ioctl(I2C_SLAVE) failed and returned errno %s \n",
-				strerror(error_code));
-	}
-
-	memset(messages, 0, sizeof(messages));
-	memset(&packets, 0, sizeof(packets));
-
-	/* setup write message */
-	messages[0].addr = addr;
-	messages[0].flags = 0;
-	messages[0].len = write_len;
-	messages[0].buf = tx;
-
-	packets.msgs = messages;
-	packets.nmsgs = 1;
-
-	if (ioctl(fd, I2C_RDWR, &packets) < 0) {
-		int error_code = errno;
-		printf("%s: ioctl(I2C_RDWR) failed and returned errno %s \n",
-				__func__, strerror(error_code));
-		return 1;
-	}
-
-	return 0;
-}
-
-int i2c_read(int fd, uint8_t addr, uint8_t *rx, uint32_t read_len)
-{
-	struct i2c_msg messages[2];
-	struct i2c_rdwr_ioctl_data packets;
-
-	if (ioctl(fd, I2C_SLAVE_FORCE, addr) < 0) {
-		int error_code = errno;
-		printf("ioctl(I2C_SLAVE) failed and returned errno %s \n",
-				strerror(error_code));
-	}
-
-	memset(messages, 0, sizeof(messages));
-	memset(&packets, 0, sizeof(packets));
-
-	/* setup read message */
-	messages[0].addr = addr;
-	messages[0].flags = I2C_M_RD;
-	messages[0].len = read_len;
-	messages[0].buf = rx;
-
-	packets.msgs = messages;
-	packets.nmsgs = 1;
-
-	if (ioctl(fd, I2C_RDWR, &packets) < 0) {
-		int error_code = errno;
-		printf("%s: ioctl(I2C_RDWR) failed and returned errno %s \n",
-				__func__, strerror(error_code));
-		return 1;
-	}
-
-	return 0;
-}
-
-int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
+static int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
 		uint8_t *rx, uint32_t read_len)
 {
 	struct i2c_msg messages[2];
