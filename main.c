@@ -198,7 +198,7 @@ int cmd_info(int fd, uint8_t i2c_address)
 
 int cmd_prog(int fd, uint8_t i2c_address, char *filename)
 {
-	int rc;
+	int rc = 0;
 	size_t write_len;
 	uint8_t *p;
 	uint8_t *fw_buf = NULL;
