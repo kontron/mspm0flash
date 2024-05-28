@@ -12,6 +12,8 @@ uint32_t crc32(uint8_t *buf, int len);
 
 int bsl_connect(int fd, uint8_t i2c_address);
 
+int bsl_start_application(int fd, uint8_t i2c_address);
+
 int bsl_unlock_bootloader(int fd, uint8_t i2c_address);
 
 

@@ -32,6 +32,7 @@
 #define CMD_UNLOCK_BL 0x21
 #define CMD_STANDALONE_VERIFICATION 0x26
 #define CMD_MEMORY_READ_BACK 0x29
+#define CMD_START_APPLICATION 0x40
 
 extern int verbosity;
 
@@ -544,6 +545,35 @@ int bsl_verification(int fd, uint8_t i2c_address,
 	}
 
 	*crc = rx[5] | rx[6] << 8 | rx[7] << 16 | rx[8] << 24;
+
+	return 0;
+}
+
+int bsl_start_application(int fd, uint8_t i2c_address)
+{
+	int rc;
+	uint8_t tx[64];
+	uint8_t rx[64];
+
+	memset(rx, 0, sizeof(rx));
+
+	/* Unlock Bootloader */
+	tx[0] = BSL_CMD_HEADER;		// Header
+	tx[1] = 1;					// length lsb
+	tx[2] = 0;					// length msb
+	tx[3] = CMD_START_APPLICATION;	// cmd
+	add_crc(tx, sizeof(tx));
+
+	dump_data("TX:", tx, BSL_TX_LEN);
+	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 1);
+	if (rc) {
+		return rc;
+	}
+	dump_data("RX:", rx, 10);
+
+	if ((rc = check_bsl_acknowledgement(rx[0])) != 0) {
+		return rc;
+	}
 
 	return 0;
 }

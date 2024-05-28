@@ -34,6 +34,7 @@ bool o_info = false;
 bool o_erase = false;
 bool o_no_script = false;
 bool o_program = false;
+bool o_do_start = false;
 char *o_fw_file;
 
 int verbosity = 0;
@@ -132,6 +133,8 @@ static void usage(char* self)
 "  -d DEVICE,              Using given DEVICE for communication.\n"
 "\n"
 "  -n  --no-script         Do not execute init/exit script.\n"
+"\n"
+"  -s  --dont-start        Do not start the application after programming.\n"
 "\n"
 "  -v  --verbose           Increase verbosity, can be set multiple times.\n"
 "\n"
@@ -278,6 +281,10 @@ int cmd_prog(int fd, uint8_t i2c_address, char *filename)
 	}
 	printf("OK\n");
 
+	if (o_do_start) {
+		bsl_start_application(fd, i2c_address);
+	};
+
 out_free:
 	free(fw_buf);
 
@@ -292,13 +299,14 @@ static void version()
 
 
 static struct option bsl_options[] = {
- 	{ "address",    required_argument,  NULL,   'a'},
- 	{ "device",     required_argument,  NULL,   'a'},
+	{ "address",    required_argument,  NULL,   'a'},
+	{ "device",     required_argument,  NULL,   'd'},
+	{ "do-start",   no_argument,        NULL,   's'},
 	{ "no-script",  no_argument,        NULL,   'n'},
- 	{ "version",    no_argument,        NULL,   'V'},
- 	{ "verbose",    no_argument,        NULL,   'v'},
- 	{ "help",       no_argument,        NULL,   'h'},
- 	{ 0, 0, 0, 0 }
+	{ "version",    no_argument,        NULL,   'V'},
+	{ "verbose",    no_argument,        NULL,   'v'},
+	{ "help",       no_argument,        NULL,   'h'},
+	{ 0, 0, 0, 0 }
 };
 
 
@@ -308,7 +316,7 @@ int main(int argc, char **argv)
 	int opt;
 	int fd;
 
-	while ((opt = getopt_long(argc, argv, "a:d:hnvV",
+	while ((opt = getopt_long(argc, argv, "a:d:hnsvV",
 			bsl_options, NULL))!= -1) {
 		switch (opt) {
 			case 'a':
@@ -323,6 +331,9 @@ int main(int argc, char **argv)
 				break;
 			case 'n':
 				o_no_script = true;
+				break;
+			case 's':
+				o_do_start = true;
 				break;
 			case 'V':
 				version();
