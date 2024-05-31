@@ -12,7 +12,7 @@ $(o)mspm0flash: $(mspm0flash_OBJECTS)
 	$(call link_tgt,mspm0flash)
 
 clean-mspm0flash:
-	rm -f $(mspm0flash_OBJECTS) $(o)lpcflash
+	rm -f $(mspm0flash_OBJECTS) $(o)mspm0flash
 
 install-mspm0flash: $(o)mspm0flash
 	$(INSTALL) -d -m 0755 $(DESTDIR)$(BINDIR)
