@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include "bsl.h"
@@ -27,8 +28,11 @@
 #endif
 
 #define DEFAULT_I2C_ADDR 0x48
-char *o_device = NULL;
+char *o_i2c_device = NULL;
 uint8_t o_i2c_address = DEFAULT_I2C_ADDR;
+
+char *o_serial_device = NULL;
+uint32_t o_serial_baudrate = 115200;
 
 bool o_info = false;
 bool o_erase = false;
@@ -39,6 +43,7 @@ char *o_fw_file;
 
 int verbosity = 0;
 
+static struct termios old_tio;
 
 static void error(const char* fmt, ...)
 {
@@ -127,10 +132,14 @@ static void usage(char* self)
 "  Flash and verify firmware binary to a TI MSPM0L microcontroller.\n"
 "\n"
 "  Options:\n"
-"  -a I2C address,         Using given I2C_ADDRESS for communication\n"
+"  -a I2C address          Using given I2C_ADDRESS for communication\n"
 "                          (default 0x48)\n"
 "\n"
-"  -d DEVICE,              Using given DEVICE for communication.\n"
+"  -b baudrate             Using given baudrate for communication\n"
+"\n"
+"  -I I2C-DEVICE           Using given I2C DEVICE for communication.\n"
+"\n"
+"  -S SERIAL-DEVICE        Using given serial DEVICE for communication.\n"
 "\n"
 "  -n  --no-script         Do not execute init/exit script.\n"
 "\n"
@@ -151,19 +160,19 @@ static void usage(char* self)
 }
 
 
-int cmd_erase(int fd, uint8_t i2c_address)
+int cmd_erase(struct bsl_intf *intf)
 {
-	if (bsl_connect(fd, i2c_address) != 0) {
+	if (bsl_connect(intf) != 0) {
 		printf("ERROR: connect\n");
 		return -1;
 	}
 
-	if (bsl_unlock_bootloader(fd, i2c_address) != 0) {
+	if (bsl_unlock_bootloader(intf) != 0) {
 		printf("ERROR: unlock device\n");
 		return -1;
 	}
 
-	if (bsl_mass_erase(fd, i2c_address) != 0) {
+	if (bsl_mass_erase(intf) != 0) {
 		printf("ERROR: mass erase device\n");
 		return -1;
 	}
@@ -172,16 +181,16 @@ int cmd_erase(int fd, uint8_t i2c_address)
 }
 
 
-int cmd_info(int fd, uint8_t i2c_address)
+int cmd_info(struct bsl_intf *intf)
 {
 	struct device_info info;
 
-	if (bsl_connect(fd, i2c_address) != 0) {
+	if (bsl_connect(intf) != 0) {
 		printf("ERROR: connect\n");
 		return -1;
 	}
 
-	if (bsl_get_device_info(fd, i2c_address, &info) != 0) {
+	if (bsl_get_device_info(intf, &info) != 0) {
 		printf("ERROR: Get Device info\n");
 		return -1;
 	}
@@ -199,7 +208,7 @@ int cmd_info(int fd, uint8_t i2c_address)
 }
 
 
-int cmd_prog(int fd, uint8_t i2c_address, char *filename)
+int cmd_prog(struct bsl_intf *intf, char *filename)
 {
 	int rc = 0;
 	size_t write_len;
@@ -216,20 +225,20 @@ int cmd_prog(int fd, uint8_t i2c_address, char *filename)
 		return -1;
 	}
 
-	if (bsl_connect(fd, i2c_address) != 0) {
+	if (bsl_connect(intf) != 0) {
 		printf("ERROR: connect\n");
 		goto out_free;
 	}
 
 	printf("UNLOCK .. ");
-	if (bsl_unlock_bootloader(fd, i2c_address) != 0) {
+	if (bsl_unlock_bootloader(intf) != 0) {
 		printf("ERROR: unlock device\n");
 		goto out_free;
 	}
 	printf("OK\n");
 
 	printf("ERASE .. ");
-	if (bsl_mass_erase(fd, i2c_address) != 0) {
+	if (bsl_mass_erase(intf) != 0) {
 		printf("ERROR: mass erase device\n");
 		goto out_free;
 	}
@@ -248,7 +257,7 @@ int cmd_prog(int fd, uint8_t i2c_address, char *filename)
 			write_len = len;
 		}
 
-		if (bsl_program_data(fd, i2c_address, address, p, write_len) != 0) {
+		if (bsl_program_data(intf, address, p, write_len) != 0) {
 			printf("ERROR: program data\n");
 			goto out_free;
 		}
@@ -267,7 +276,7 @@ int cmd_prog(int fd, uint8_t i2c_address, char *filename)
 	/* BSL only supports calculating 1k blocks */
 	pad_len = (total_len+1023) & (~0x3ff);
 
-	if (bsl_verification(fd, i2c_address, 0, pad_len, &crc_bsl) != 0) {
+	if (bsl_verification(intf, 0, pad_len, &crc_bsl) != 0) {
 		printf("ERROR: bsl_verification\n");
 		goto out_free;
 	}
@@ -282,7 +291,7 @@ int cmd_prog(int fd, uint8_t i2c_address, char *filename)
 	printf("OK\n");
 
 	if (o_do_start) {
-		bsl_start_application(fd, i2c_address);
+		bsl_start_application(intf);
 	};
 
 out_free:
@@ -300,6 +309,7 @@ static void version()
 
 static struct option bsl_options[] = {
 	{ "address",    required_argument,  NULL,   'a'},
+	{ "baudrate",   required_argument,  NULL,   'b'},
 	{ "device",     required_argument,  NULL,   'd'},
 	{ "do-start",   no_argument,        NULL,   's'},
 	{ "no-script",  no_argument,        NULL,   'n'},
@@ -314,16 +324,23 @@ int main(int argc, char **argv)
 {
 	int rc = -1;
 	int opt;
-	int fd;
 
-	while ((opt = getopt_long(argc, argv, "a:d:hnsvV",
+	struct bsl_intf intf = {0};
+
+	while ((opt = getopt_long(argc, argv, "a:b:I:S:hnsvV",
 			bsl_options, NULL))!= -1) {
 		switch (opt) {
 			case 'a':
-				o_i2c_address = atoi(optarg);
+				intf.i2c_address = atoi(optarg);
 				break;
-			case 'd':
-				o_device = optarg;
+			case 'b':
+				intf.baudrate = atoi(optarg);
+				break;
+			case 'I':
+				o_i2c_device = optarg;
+				break;
+			case 'S':
+				o_serial_device = optarg;
 				break;
 			case 'h':
 				usage(argv[0]);
@@ -343,7 +360,6 @@ int main(int argc, char **argv)
 				verbosity++;
 				break;
 			default:
-				fprintf(stderr, "Usage: %s [-ilw] [file...]\n", argv[0]);
 				usage(argv[0]);
 				exit(EXIT_FAILURE);
         }
@@ -369,14 +385,55 @@ int main(int argc, char **argv)
 		o_fw_file = argv[optind+1];
 	} else {
 		usage(argv[0]);
-			printf("ERROR: unsupported CMD %s\n", argv[optind]);
+		printf("ERROR: unsupported CMD %s\n", argv[optind]);
 		exit(1);
 	}
 
-	if ((fd = open(o_device, O_RDWR)) < 0) {
-		printf("ERROR: cannot open device %s\n", o_device);
-		return -1;
+	if (o_i2c_device == NULL && o_serial_device == NULL) {
+		printf("ERROR: either I2C or SERIAL interface required\n");
+		exit(1);
 	}
+
+	if (o_i2c_device != NULL && strlen(o_i2c_device)) {
+		if ((intf.fd = open(o_i2c_device, O_RDWR)) < 0) {
+			printf("ERROR: cannot open device %s\n", o_i2c_device);
+			return -1;
+		}
+		intf.type = INTERFACE_TYPE_I2C;
+		intf.i2c_address = o_i2c_address;
+	} else if (o_serial_device != NULL && strlen(o_serial_device)) {
+		struct termios tio;
+
+		if ((intf.fd = open(o_serial_device, O_RDWR | O_NONBLOCK | O_NOCTTY)) < 0) {
+			printf("ERROR: cannot open device %s\n", o_serial_device);
+			return -1;
+		}
+
+		intf.type = INTERFACE_TYPE_UART;
+		intf.baudrate = o_serial_baudrate;
+
+	    tcflush(intf.fd, TCOFLUSH);
+		tcflush(intf.fd, TCIFLUSH);
+
+		rc = tcgetattr(intf.fd, &old_tio);
+		assert(rc != -1);
+
+		memset(&tio, 0, sizeof(tio));
+
+		/* 8n1, baud, local connection, enable rx, sw flow control */
+		tio.c_cflag = CS8 | B9600 | CLOCAL | CREAD | IXON | IXOFF;
+
+		/* raw output */
+		tio.c_oflag = 0;
+
+		/* no canonical input, no echo */
+		tio.c_lflag = ICANON;
+
+		if (tcsetattr(intf.fd, TCSANOW, &tio) == -1) {
+			printf("ERROR: tcsetattr %s\n", o_serial_device);
+		}
+	}
+
 
 	if (!o_no_script) {
 		rc = script_init();
@@ -387,11 +444,11 @@ int main(int argc, char **argv)
 	}
 
 	if (o_erase) {
-		rc = cmd_erase(fd, o_i2c_address);
+		rc = cmd_erase(&intf);
 	} else if (o_info) {
-		rc = cmd_info(fd, o_i2c_address);
+		rc = cmd_info(&intf);
 	} else if (o_program) {
-		rc = cmd_prog(fd, o_i2c_address, o_fw_file);
+		rc = cmd_prog(&intf, o_fw_file);
 	}
 
 	if (!o_no_script) {
@@ -399,7 +456,11 @@ int main(int argc, char **argv)
 	}
 
 out_close:
-	close(fd);
+
+	if (intf.type == INTERFACE_TYPE_UART) {
+		tcsetattr(intf.fd, TCSANOW, &old_tio);
+	}
+	close(intf.fd);
 
 	return rc;
 }

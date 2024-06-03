@@ -8,13 +8,26 @@
 #ifndef __I2C_H__
 #define __I2C_H__
 
+enum {
+	INTERFACE_TYPE_INVALID = 0,
+	INTERFACE_TYPE_UART,
+	INTERFACE_TYPE_I2C
+};
+
+struct bsl_intf {
+	int fd;
+	uint8_t i2c_address;
+	uint32_t baudrate;
+	int type;
+};
+
 uint32_t crc32(uint8_t *buf, int len);
 
-int bsl_connect(int fd, uint8_t i2c_address);
+int bsl_connect(struct bsl_intf *intf);
 
-int bsl_start_application(int fd, uint8_t i2c_address);
+int bsl_start_application(struct bsl_intf *intf);
 
-int bsl_unlock_bootloader(int fd, uint8_t i2c_address);
+int bsl_unlock_bootloader(struct bsl_intf *intf);
 
 
 struct device_info {
@@ -29,17 +42,17 @@ struct device_info {
 	uint32_t bsl_config_id;
 };
 
-int bsl_get_device_info(int fd, uint8_t i2c_address, struct device_info *info);
+int bsl_get_device_info(struct bsl_intf *intf, struct device_info *info);
 
-int bsl_mass_erase(int fd, uint8_t i2c_address);
+int bsl_mass_erase(struct bsl_intf *intf);
 
-int bsl_readback_data(int fd, uint8_t i2c_address,
+int bsl_readback_data(struct bsl_intf *intf,
 		uint32_t start, uint32_t count);
 
-int bsl_program_data(int fd, uint8_t i2c_address,
+int bsl_program_data(struct bsl_intf *intf,
 		uint32_t address, uint8_t *data, size_t len);
 
-int bsl_verification(int fd, uint8_t i2c_address,
+int bsl_verification(struct bsl_intf *intf,
 		uint32_t address, uint32_t len, uint32_t *crc);
 
 #endif /* #ifndef __I2C_H__ */

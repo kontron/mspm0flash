@@ -16,8 +16,10 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 
 #include "bsl.h"
+#include "common.h"
 
 #define BSL_CMD_HEADER 0x80
 #define BSL_HEADER_SIZE 3
@@ -92,6 +94,85 @@ static int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
 	return 0;
 }
 
+
+static int uart_write_read(int fd, uint8_t *tx, uint32_t write_len,
+		uint8_t *rx, uint32_t read_len)
+{
+	struct timeval tv;
+	int n;
+	int rc = 0;
+	int idx = 0;
+	int cnt;
+	fd_set fds;
+	long timeout_ms = 500;
+
+	rc = write(fd, tx, write_len);
+	assert(rc != -1);
+
+	while (1) {
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+
+		tv.tv_sec = timeout_ms / 1000;
+		tv.tv_usec = (timeout_ms % 1000) * 1000;
+
+		n = select(fd+1, &fds, NULL, NULL, &tv);
+		assert(n >= -1 && n <= 1);
+
+		if (n == -1) {
+			rc = 1;
+			perror("select() failed");
+			goto out;
+		} else if (n == 0) {
+			/* timeout */
+			DEBUG(0, "timeout\n");
+			rc = EIO;
+			break;
+		} else if (n == 1) {
+			cnt = read(fd, rx + idx, read_len - idx - 1);
+			assert(cnt > 0);
+			idx += cnt;
+			DEBUG(2, "received %d bytes\n", cnt);
+		} else {
+			rc = 1;
+			perror("should not happen");
+			goto out;
+		}
+
+		/* just test the end of a string */
+		if (idx >= 2 && rx[idx - 2] == '\r' && rx[idx - 1] == '\n') {
+			DEBUG(2, "received CRLF\n");
+			/* terminate string for easier handling */
+			rx[idx - 2] = '\0';
+			DEBUG(3, "RX %s\n", rx);
+			break;
+		}
+	}
+
+out:
+	return rc;
+}
+
+
+static int bsl_write_read(struct bsl_intf *intf, uint8_t *tx, uint32_t write_len,
+		uint8_t *rx, uint32_t read_len)
+{
+	int rc = -1;
+
+	switch (intf->type) {
+		case INTERFACE_TYPE_I2C:
+			rc = i2c_write_read(intf->fd, intf->i2c_address,
+						tx, write_len, rx, read_len);
+			break;
+		case INTERFACE_TYPE_UART:
+			rc = uart_write_read(intf->fd, tx, write_len, rx, read_len);
+			break;
+	}
+
+	return rc;
+}
+
+
 #define POLY 0xEDB88320
 uint32_t crc32(uint8_t *buf, int len)
 {
@@ -108,6 +189,7 @@ uint32_t crc32(uint8_t *buf, int len)
 	}
 	return crc;
 }
+
 
 /*
 	PI Code							BSL Core Data		PI Code
@@ -273,6 +355,7 @@ static int check_bsl_response(uint8_t *buffer, int len)
 	return 0;
 }
 
+
 /*
 
 	This is taken from User’s Guide MSPM0 Bootloader, section 4.3 Bootloader
@@ -293,13 +376,12 @@ static int check_bsl_response(uint8_t *buffer, int len)
 	Start application	No		0x40 	-			-				No
 */
 
-
 /*
 	Connection command is the first command used to establish the
 	connection between the Host and the Target through a specific
 	interface (UART or I2C).
 */
-int bsl_connect(int fd, uint8_t i2c_address)
+int bsl_connect(struct bsl_intf *intf)
 {
 	int rc;
 	uint8_t tx[32];
@@ -314,7 +396,7 @@ int bsl_connect(int fd, uint8_t i2c_address)
 	memset(rx, 0, sizeof(rx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 1);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 1);
 	if (rc) {
 		return rc;
 	}
@@ -332,7 +414,7 @@ int bsl_connect(int fd, uint8_t i2c_address)
 	The command is used to get the version information and buffer size
 	available for data transaction
 */
-int bsl_get_device_info(int fd, uint8_t i2c_address, struct device_info *info)
+int bsl_get_device_info(struct bsl_intf *intf, struct device_info *info)
 {
 	int rc;
 	uint8_t tx[32];
@@ -348,7 +430,7 @@ int bsl_get_device_info(int fd, uint8_t i2c_address, struct device_info *info)
 	memset(rx, 0, sizeof(rx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 33);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 33);
 	if (rc) {
 		return rc;
 	}
@@ -376,7 +458,7 @@ int bsl_get_device_info(int fd, uint8_t i2c_address, struct device_info *info)
 	unlock, all the protected commands listed in Section 4.3 are processed
 	by the BSL.
 */
-int bsl_unlock_bootloader(int fd, uint8_t i2c_address)
+int bsl_unlock_bootloader(struct bsl_intf *intf)
 {
 	int rc;
 	uint8_t tx[64];
@@ -393,7 +475,7 @@ int bsl_unlock_bootloader(int fd, uint8_t i2c_address)
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 10);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 10);
 	if (rc) {
 		return rc;
 	}
@@ -407,7 +489,7 @@ int bsl_unlock_bootloader(int fd, uint8_t i2c_address)
 }
 
 
-int bsl_mass_erase(int fd, uint8_t i2c_address)
+int bsl_mass_erase(struct bsl_intf *intf)
 {
 	int rc;
 	uint8_t tx[64];
@@ -423,7 +505,7 @@ int bsl_mass_erase(int fd, uint8_t i2c_address)
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 10);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 10);
 	if (rc) {
 		return rc;
 	}
@@ -437,7 +519,7 @@ int bsl_mass_erase(int fd, uint8_t i2c_address)
 }
 
 
-int bsl_readback_data(int fd, uint8_t i2c_address,
+int bsl_readback_data(struct bsl_intf *intf,
 		uint32_t start, uint32_t count)
 {
 	int rc;
@@ -461,7 +543,7 @@ int bsl_readback_data(int fd, uint8_t i2c_address,
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 9 + count);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 9 + count);
 	if (rc) {
 		return rc;
 	}
@@ -476,7 +558,7 @@ int bsl_readback_data(int fd, uint8_t i2c_address,
 }
 
 
-int bsl_program_data(int fd, uint8_t i2c_address,
+int bsl_program_data(struct bsl_intf *intf,
 		uint32_t address, uint8_t *data, size_t len)
 {
 	int rc;
@@ -497,7 +579,7 @@ int bsl_program_data(int fd, uint8_t i2c_address,
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 10);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 10);
 	if (rc) {
 		return rc;
 	}
@@ -510,7 +592,7 @@ int bsl_program_data(int fd, uint8_t i2c_address,
 	return 0;
 }
 
-int bsl_verification(int fd, uint8_t i2c_address,
+int bsl_verification(struct bsl_intf *intf,
 		uint32_t address, uint32_t len, uint32_t *crc)
 {
 	int rc;
@@ -534,7 +616,7 @@ int bsl_verification(int fd, uint8_t i2c_address,
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 13);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 13);
 	if (rc) {
 		return rc;
 	}
@@ -549,7 +631,7 @@ int bsl_verification(int fd, uint8_t i2c_address,
 	return 0;
 }
 
-int bsl_start_application(int fd, uint8_t i2c_address)
+int bsl_start_application(struct bsl_intf *intf)
 {
 	int rc;
 	uint8_t tx[64];
@@ -565,7 +647,7 @@ int bsl_start_application(int fd, uint8_t i2c_address)
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
-	rc = i2c_write_read(fd, i2c_address, tx, BSL_TX_LEN, rx, 1);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 1);
 	if (rc) {
 		return rc;
 	}
