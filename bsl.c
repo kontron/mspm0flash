@@ -154,8 +154,8 @@ out:
 }
 
 
-static int bsl_write_read(struct bsl_intf *intf, uint8_t *tx, uint32_t write_len,
-		uint8_t *rx, uint32_t read_len)
+static int bsl_write_read(struct bsl_intf *intf,
+		uint8_t *tx, uint32_t write_len, uint8_t *rx, uint32_t read_len)
 {
 	int rc = -1;
 
