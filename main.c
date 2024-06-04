@@ -31,8 +31,9 @@
 char *o_i2c_device = NULL;
 uint8_t o_i2c_address = DEFAULT_I2C_ADDR;
 
+#define DEFAULT_BAUDRATE 9600
 char *o_serial_device = NULL;
-uint32_t o_serial_baudrate = 115200;
+uint32_t o_serial_baudrate = DEFAULT_BAUDRATE;
 
 bool o_info = false;
 bool o_erase = false;
@@ -136,6 +137,7 @@ static void usage(char* self)
 "                          (default 0x48)\n"
 "\n"
 "  -b baudrate             Using given baudrate for communication\n"
+"                          (default 9600)\n"
 "\n"
 "  -I I2C-DEVICE           Using given I2C DEVICE for communication.\n"
 "\n"
@@ -160,13 +162,29 @@ static void usage(char* self)
 }
 
 
-int cmd_erase(struct bsl_intf *intf)
+int uart_set_baudrate(int fd, int baudrate)
 {
-	if (bsl_connect(intf) != 0) {
-		printf("ERROR: connect\n");
-		return -1;
+	struct termios tio;
+
+	memset(&tio, 0, sizeof(tio));
+
+	/* 8n1, baud, local connection, enable rx, sw flow control */
+	tio.c_cflag = CS8 | CLOCAL | CREAD;
+
+	cfsetspeed(&tio, baudrate);
+
+	tio.c_oflag = 0;
+	tio.c_lflag = 0;
+
+	if (tcsetattr(fd, TCSANOW, &tio) == -1) {
+		printf("ERROR: tcsetattr %s\n", o_serial_device);
 	}
 
+	return 0;
+}
+
+int cmd_erase(struct bsl_intf *intf)
+{
 	if (bsl_unlock_bootloader(intf) != 0) {
 		printf("ERROR: unlock device\n");
 		return -1;
@@ -184,11 +202,6 @@ int cmd_erase(struct bsl_intf *intf)
 int cmd_info(struct bsl_intf *intf)
 {
 	struct device_info info;
-
-	if (bsl_connect(intf) != 0) {
-		printf("ERROR: connect\n");
-		return -1;
-	}
 
 	if (bsl_get_device_info(intf, &info) != 0) {
 		printf("ERROR: Get Device info\n");
@@ -223,11 +236,6 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 
 	if (load_fw_image(filename, &fw_buf, &total_len) != 0) {
 		return -1;
-	}
-
-	if (bsl_connect(intf) != 0) {
-		printf("ERROR: connect\n");
-		goto out_free;
 	}
 
 	printf("UNLOCK .. ");
@@ -334,7 +342,7 @@ int main(int argc, char **argv)
 				intf.i2c_address = atoi(optarg);
 				break;
 			case 'b':
-				intf.baudrate = atoi(optarg);
+				o_serial_baudrate = atoi(optarg);
 				break;
 			case 'I':
 				o_i2c_device = optarg;
@@ -402,7 +410,6 @@ int main(int argc, char **argv)
 		intf.type = INTERFACE_TYPE_I2C;
 		intf.i2c_address = o_i2c_address;
 	} else if (o_serial_device != NULL && strlen(o_serial_device)) {
-		struct termios tio;
 
 		if ((intf.fd = open(o_serial_device, O_RDWR | O_NONBLOCK | O_NOCTTY)) < 0) {
 			printf("ERROR: cannot open device %s\n", o_serial_device);
@@ -418,19 +425,7 @@ int main(int argc, char **argv)
 		rc = tcgetattr(intf.fd, &old_tio);
 		assert(rc != -1);
 
-		memset(&tio, 0, sizeof(tio));
-
-		/* 8n1, baud, local connection, enable rx, sw flow control */
-		tio.c_cflag = CS8 | CLOCAL | CREAD;
-
-		cfsetspeed(&tio, B9600);
-
-		tio.c_oflag = 0;
-		tio.c_lflag = 0;
-
-		if (tcsetattr(intf.fd, TCSANOW, &tio) == -1) {
-			printf("ERROR: tcsetattr %s\n", o_serial_device);
-		}
+		uart_set_baudrate(intf.fd, 9600);
 	}
 
 
@@ -440,6 +435,47 @@ int main(int argc, char **argv)
 			printf("ERROR: script init\n");
 			goto out_close;
 		}
+	}
+
+	if (bsl_connect(&intf) != 0) {
+		printf("ERROR: connect\n");
+		goto out_close;
+	}
+
+	if (intf.type == INTERFACE_TYPE_UART && intf.baudrate != DEFAULT_BAUDRATE) {
+		int baud;
+
+		DEBUG(0, "change baudrate to %d\n", intf.baudrate);
+
+		/* get baudrate */
+		switch (intf.baudrate) {
+			case 19200: baud = BSL_UART_B19200; break;
+			case 38400: baud = BSL_UART_B38400; break;
+			case 57200: baud = BSL_UART_B57600; break;
+			case 115200: baud = BSL_UART_B115200; break;
+			case 1000000: baud = BSL_UART_B1000000; break;
+			default:
+				printf("ERROR: invalid baudrate\n");
+				rc = EINVAL;
+				goto out_close;
+		}
+		if (bsl_change_baudrate(&intf, baud) != 0) {
+			printf("ERROR: bsl_change_baudrate\n");
+			goto out_close;
+		}
+
+		switch (intf.baudrate) {
+			case 19200: baud = B19200; break;
+			case 38400: baud = B38400; break;
+			case 57200: baud = B57600; break;
+			case 115200: baud = B115200; break;
+			case 1000000: baud = B1000000; break;
+			default:
+				printf("ERROR: invalid baudrate\n");
+				rc = EINVAL;
+				goto out_close;
+		}
+		uart_set_baudrate(intf.fd, baud);
 	}
 
 	if (o_erase) {

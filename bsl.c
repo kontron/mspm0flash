@@ -35,6 +35,7 @@
 #define CMD_STANDALONE_VERIFICATION 0x26
 #define CMD_MEMORY_READ_BACK 0x29
 #define CMD_START_APPLICATION 0x40
+#define CMD_CHANGE_BAUDRATE 0x52
 
 extern int verbosity;
 
@@ -404,7 +405,6 @@ int bsl_get_device_info(struct bsl_intf *intf, struct device_info *info)
 	uint8_t tx[32];
 	uint8_t rx[64];
 
-	/* Get device info */
 	tx[0] = BSL_CMD_HEADER;		// Header
 	tx[1] = 1;					// length lsb
 	tx[2] = 0;					// length msb
@@ -450,7 +450,6 @@ int bsl_unlock_bootloader(struct bsl_intf *intf)
 
 	memset(rx, 0, sizeof(rx));
 
-	/* Unlock Bootloader */
 	tx[0] = BSL_CMD_HEADER;		// Header
 	tx[1] = 33;					// length lsb
 	tx[2] = 0;					// length msb
@@ -623,7 +622,6 @@ int bsl_start_application(struct bsl_intf *intf)
 
 	memset(rx, 0, sizeof(rx));
 
-	/* Unlock Bootloader */
 	tx[0] = BSL_CMD_HEADER;		// Header
 	tx[1] = 1;					// length lsb
 	tx[2] = 0;					// length msb
@@ -636,6 +634,35 @@ int bsl_start_application(struct bsl_intf *intf)
 		return rc;
 	}
 	dump_data("RX:", rx, 10);
+
+	if ((rc = check_bsl_acknowledgement(rx[0])) != 0) {
+		return rc;
+	}
+
+	return 0;
+}
+
+int bsl_change_baudrate(struct bsl_intf *intf, uint8_t baudrate)
+{
+	int rc;
+	uint8_t tx[64];
+	uint8_t rx[64];
+
+	memset(rx, 0, sizeof(rx));
+
+	tx[0] = BSL_CMD_HEADER;			// Header
+	tx[1] = 2;						// length lsb
+	tx[2] = 0;						// length msb
+	tx[3] = CMD_CHANGE_BAUDRATE;	// cmd
+	tx[4] = baudrate;
+	add_crc(tx, sizeof(tx));
+
+	dump_data("TX:", tx, BSL_TX_LEN);
+	rc = bsl_write_read(intf, tx, BSL_TX_LEN, rx, 1);
+	if (rc) {
+		return rc;
+	}
+	dump_data("RX:", rx, 1);
 
 	if ((rc = check_bsl_acknowledgement(rx[0])) != 0) {
 		return rc;
