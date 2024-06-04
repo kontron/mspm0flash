@@ -94,14 +94,13 @@ static int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
 	return 0;
 }
 
-
 static int uart_write_read(int fd, uint8_t *tx, uint32_t write_len,
 		uint8_t *rx, uint32_t read_len)
 {
 	struct timeval tv;
 	int n;
-	int rc = 0;
-	int idx = 0;
+	int rc;
+	uint32_t idx = 0;
 	int cnt;
 	fd_set fds;
 	long timeout_ms = 500;
@@ -109,7 +108,7 @@ static int uart_write_read(int fd, uint8_t *tx, uint32_t write_len,
 	rc = write(fd, tx, write_len);
 	assert(rc != -1);
 
-	while (1) {
+	while (idx < read_len) {
 		FD_ZERO(&fds);
 		FD_SET(fd, &fds);
 
@@ -120,39 +119,25 @@ static int uart_write_read(int fd, uint8_t *tx, uint32_t write_len,
 		assert(n >= -1 && n <= 1);
 
 		if (n == -1) {
-			rc = 1;
 			perror("select() failed");
-			goto out;
+			return 1;
 		} else if (n == 0) {
 			/* timeout */
 			DEBUG(0, "timeout\n");
-			rc = EIO;
-			break;
+			return EIO;
 		} else if (n == 1) {
-			cnt = read(fd, rx + idx, read_len - idx - 1);
+			cnt = read(fd, rx + idx, read_len - idx);
 			assert(cnt > 0);
 			idx += cnt;
 			DEBUG(2, "received %d bytes\n", cnt);
 		} else {
-			rc = 1;
 			perror("should not happen");
-			goto out;
-		}
-
-		/* just test the end of a string */
-		if (idx >= 2 && rx[idx - 2] == '\r' && rx[idx - 1] == '\n') {
-			DEBUG(2, "received CRLF\n");
-			/* terminate string for easier handling */
-			rx[idx - 2] = '\0';
-			DEBUG(3, "RX %s\n", rx);
-			break;
+			return 1;
 		}
 	}
 
-out:
-	return rc;
+	return 0;
 }
-
 
 static int bsl_write_read(struct bsl_intf *intf,
 		uint8_t *tx, uint32_t write_len, uint8_t *rx, uint32_t read_len)
@@ -171,7 +156,6 @@ static int bsl_write_read(struct bsl_intf *intf,
 
 	return rc;
 }
-
 
 #define POLY 0xEDB88320
 uint32_t crc32(uint8_t *buf, int len)
@@ -557,12 +541,12 @@ int bsl_readback_data(struct bsl_intf *intf,
 	return rc;
 }
 
-
+#define BSL_PROGRAM_TX_BUFFER_LEN BSL_PROGGRAM_DATA_MAX_LEN + 12
 int bsl_program_data(struct bsl_intf *intf,
 		uint32_t address, uint8_t *data, size_t len)
 {
 	int rc;
-	uint8_t tx[512];
+	uint8_t tx[BSL_PROGRAM_TX_BUFFER_LEN];
 	uint8_t rx[32];
 
 	memset(rx, 0, sizeof(rx));

@@ -251,8 +251,8 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 	printf("FLASH ..");
 	fflush(stdout);
 	while (len > 0) {
-		if (len > 256) {
-			write_len = 256;
+		if (len > BSL_PROGGRAM_DATA_MAX_LEN) {
+			write_len = BSL_PROGGRAM_DATA_MAX_LEN;
 		} else {
 			write_len = len;
 		}
@@ -421,13 +421,12 @@ int main(int argc, char **argv)
 		memset(&tio, 0, sizeof(tio));
 
 		/* 8n1, baud, local connection, enable rx, sw flow control */
-		tio.c_cflag = CS8 | B9600 | CLOCAL | CREAD | IXON | IXOFF;
+		tio.c_cflag = CS8 | CLOCAL | CREAD;
 
-		/* raw output */
+		cfsetspeed(&tio, B9600);
+
 		tio.c_oflag = 0;
-
-		/* no canonical input, no echo */
-		tio.c_lflag = ICANON;
+		tio.c_lflag = 0;
 
 		if (tcsetattr(intf.fd, TCSANOW, &tio) == -1) {
 			printf("ERROR: tcsetattr %s\n", o_serial_device);
