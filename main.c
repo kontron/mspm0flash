@@ -22,7 +22,6 @@
 #include "common.h"
 #include "script.h"
 
-
 #ifndef VERSION
   #define VERSION "unrel"
 #endif
@@ -124,7 +123,6 @@ err:
 	return rc;
 }
 
-
 static void usage(char* self)
 {
     printf(
@@ -133,21 +131,21 @@ static void usage(char* self)
 "  Flash and verify firmware binary to a TI MSPM0L microcontroller.\n"
 "\n"
 "  Options:\n"
-"  -a I2C address          Using given I2C_ADDRESS for communication\n"
+"  -a, --address ADDR      Using given I2C_ADDRESS for communication\n"
 "                          (default 0x48)\n"
 "\n"
-"  -b baudrate             Using given baudrate for communication\n"
+"  -b, --baud RATE         Using given baudrate for communication\n"
 "                          (default 9600)\n"
 "\n"
-"  -I I2C-DEVICE           Using given I2C DEVICE for communication.\n"
+"  -I, --i2c  DEVICE       Using given I2C DEVICE for communication.\n"
 "\n"
-"  -S SERIAL-DEVICE        Using given serial DEVICE for communication.\n"
+"  -S, --serail  DEVICE    Using given serial DEVICE for communication.\n"
 "\n"
-"  -n  --no-script         Do not execute init/exit script.\n"
+"  -n, --no-script         Do not execute init/exit script.\n"
 "\n"
-"  -s  --dont-start        Do not start the application after programming.\n"
+"  -s, --dont-start        Do not start the application after programming.\n"
 "\n"
-"  -v  --verbose           Increase verbosity, can be set multiple times.\n"
+"  -v, --verbose           Increase verbosity, can be set multiple times.\n"
 "\n"
 "  -V, --version           Display program version and exit.\n"
 "\n"
@@ -201,7 +199,7 @@ int cmd_erase(struct bsl_intf *intf)
 
 int cmd_info(struct bsl_intf *intf)
 {
-	struct device_info info;
+	struct bsl_device_info info;
 
 	if (bsl_get_device_info(intf, &info) != 0) {
 		printf("ERROR: Get Device info\n");
@@ -219,7 +217,6 @@ int cmd_info(struct bsl_intf *intf)
 
 	return 0;
 }
-
 
 int cmd_prog(struct bsl_intf *intf, char *filename)
 {
@@ -308,17 +305,16 @@ out_free:
 	return rc;
 }
 
-
 static void version()
 {
 	printf("%s\n", VERSION);
 }
 
-
 static struct option bsl_options[] = {
 	{ "address",    required_argument,  NULL,   'a'},
-	{ "baudrate",   required_argument,  NULL,   'b'},
-	{ "device",     required_argument,  NULL,   'd'},
+	{ "baud",       required_argument,  NULL,   'b'},
+	{ "uart",       required_argument,  NULL,   'S'},
+	{ "i2c",        required_argument,  NULL,   'I'},
 	{ "do-start",   no_argument,        NULL,   's'},
 	{ "no-script",  no_argument,        NULL,   'n'},
 	{ "version",    no_argument,        NULL,   'V'},
@@ -326,7 +322,6 @@ static struct option bsl_options[] = {
 	{ "help",       no_argument,        NULL,   'h'},
 	{ 0, 0, 0, 0 }
 };
-
 
 int main(int argc, char **argv)
 {

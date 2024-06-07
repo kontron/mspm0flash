@@ -21,22 +21,6 @@
 #include "bsl.h"
 #include "common.h"
 
-#define BSL_CMD_HEADER 0x80
-#define BSL_HEADER_SIZE 3
-#define BSL_CRC_SIZE 4
-
-#define BSL_TX_LEN (BSL_HEADER_SIZE + (tx[1] | (tx[2] << 8)) + BSL_CRC_SIZE)
-
-#define CMD_CONNECTION 0x12
-#define CMD_MASS_ERASE 0x15
-#define CMD_GET_DEVICE_INFO 0x19
-#define CMD_PROGRAM_DATA 0x20
-#define CMD_UNLOCK_BL 0x21
-#define CMD_STANDALONE_VERIFICATION 0x26
-#define CMD_MEMORY_READ_BACK 0x29
-#define CMD_START_APPLICATION 0x40
-#define CMD_CHANGE_BAUDRATE 0x52
-
 extern int verbosity;
 
 static void dump_data(char *prefix, uint8_t *buf, int len)
@@ -175,13 +159,6 @@ uint32_t crc32(uint8_t *buf, int len)
 	return crc;
 }
 
-
-/*
-	PI Code							BSL Core Data		PI Code
-	-----------------------------	----------------	--------------
-	Header (1 byte) + len(2 byte) 	BSL Core Cmd/Rsp	CRC32 (4 byte)
-
-*/
 static void add_crc(uint8_t *data, int len)
 {
 	int core_data_len;
@@ -200,15 +177,6 @@ static void add_crc(uint8_t *data, int len)
 	data[3 + core_data_len + 2] = (crc >> 16) & 0xff;
 	data[3 + core_data_len + 3] = (crc >> 24) & 0xff;
 }
-
-
-#define BSL_ACK 0x00
-#define BSL_ERROR_HEADER_INCORRECT 0x51
-#define BSL_ERROR_CHECKSUM_INCORRECT 0x52
-#define BSL_ERROR_PACKET_SIZE_ZERO 0x53
-#define BSL_ERROR_PACKET_SIZE_TOO_BIG 0x54
-#define BSL_ERROR_UNKNOWN_ERROR 0x55
-#define BSL_ERROR_UNKNOWN_BAUD_RATE 0x56
 
 static int check_bsl_acknowledgement(uint8_t ack)
 {
@@ -241,52 +209,6 @@ static int check_bsl_acknowledgement(uint8_t ack)
 	return 0;
 }
 
-
-#define MEMORY_READ_BACK 0x30
-#define GET_DEVICE_INFO 0x31
-#define STANDALONE_VERIFICATION 0x32
-#define MESSAGE 0x3B
-#define DETAILED_ERROR 0x3A
-
-int check_core_msg(uint8_t *data, int len)
-{
-	assert(len < 4);
-
-	switch (data[3]) {
-		case MEMORY_READ_BACK:
-			break;
-		case GET_DEVICE_INFO:
-			break;
-		case STANDALONE_VERIFICATION:
-			break;
-		case MESSAGE:
-			break;
-		case DETAILED_ERROR:
-			break;
-		default:
-			break;
-	}
-	return 0;
-}
-
-
-#define MSG_OPERATION_SUCCESSFUL 0x00
-#define MSG_BSL_LOCKED_ERROR 0x01
-#define MSG_BSL_PASSWORD_ERROR 0x02
-#define MSG_MULTIPLE_BSL_PASSWORD_ERROR 0x03
-#define MSG_UNKNOWN_COMMAND 0x04
-#define MSG_INVALID_MEMORY_RAMGE 0x05
-#define MSG_INVALID_COMMAND 0x06
-#define MSG_FACTORY_RESET_DISABLED 0x07
-#define MSG_FACTORY_RESET_PASSWORD_ERROR 0x08
-#define MSG_READ_OUT_ERROR 0x09
-#define MSG_INVALID_ADDRESS 0x0a
-#define MSG_INVALID_LENGTH 0x0b
-
-/*
-Header	Length			RSP		Data	CRC32
-0x08	0x02	0x00	0x3B	MSG		C1 C2 C3 C4
-*/
 static int check_bsl_response(uint8_t *buffer, int len)
 {
 	if (len == 0) {
@@ -303,36 +225,37 @@ static int check_bsl_response(uint8_t *buffer, int len)
 		return 1;
 	}
 
-	if (buffer[4] == 0x3b && buffer[5] != MSG_OPERATION_SUCCESSFUL) {
+	if (buffer[4] == BSL_CORE_RSP_MESSAGE
+			&& buffer[5] != BSL_CORE_MSG_OPERATION_SUCCESSFUL) {
 		switch (buffer[5]) {
-			case MSG_BSL_LOCKED_ERROR:
+			case BSL_CORE_MSG_BSL_LOCKED_ERROR:
 				printf("Incorrect password sent to unlock bootloader\n");
 				return 1;
-			case MSG_BSL_PASSWORD_ERROR:
+			case BSL_CORE_MSG_BSL_PASSWORD_ERROR:
 				return 1;
-			case MSG_MULTIPLE_BSL_PASSWORD_ERROR:
+			case BSL_CORE_MSG_MULTIPLE_BSL_PASSWORD_ERROR:
 				return 1;
-			case MSG_UNKNOWN_COMMAND:
+			case BSL_CORE_MSG_UNKNOWN_COMMAND:
 				printf("Unknown command\n");
 				return 1;
-			case MSG_INVALID_MEMORY_RAMGE:
+			case BSL_CORE_MSG_INVALID_MEMORY_RAMGE:
 				printf("The given memory range is invalid\n");
 				return 1;
-			case MSG_INVALID_COMMAND:
+			case BSL_CORE_MSG_INVALID_COMMAND:
 				return 1;
-			case MSG_FACTORY_RESET_DISABLED:
+			case BSL_CORE_MSG_FACTORY_RESET_DISABLED:
 				printf("Factory reset is disabled in the BCR configuration\n");
 				return 1;
-			case MSG_FACTORY_RESET_PASSWORD_ERROR:
+			case BSL_CORE_MSG_FACTORY_RESET_PASSWORD_ERROR:
 				printf("Incorrect/no password sent with factory reset CMD\n");
 				return 1;
-			case MSG_READ_OUT_ERROR:
+			case BSL_CORE_MSG_READ_OUT_ERROR:
 				printf("Read out is disabled in BCR configuration\n");
 				return 1;
-			case MSG_INVALID_ADDRESS:
+			case BSL_CORE_MSG_INVALID_ADDRESS:
 				printf("Start address or data length is not 8-byte aligned\n");
 				return 1;
-			case MSG_INVALID_LENGTH:
+			case BSL_CORE_MSG_INVALID_LENGTH:
 				printf("Data size is less than 1KB\n");
 				return 1;
 		}
@@ -340,42 +263,16 @@ static int check_bsl_response(uint8_t *buffer, int len)
 	return 0;
 }
 
-
-/*
-
-	This is taken from User’s Guide MSPM0 Bootloader, section 4.3 Bootloader
-	Core Commands
-
-	BSL Command			Unlock	CMD		Start Addr	Data (Bytes)	BSL Core rsp
-	------------------- ------- ------	----------	------------	------------
-	Connection			No		0x12 	- 			-				No
-	Unlock Bootloader	No		0x21 	-			D1…D32	Yes
-	Flash Range Erase	Yes		0x23 	A1...A4		A1...A4 Yes
-	Mass Erase			Yes		0x15 	-			-				Yes
-	Program Data		Yes		0x20 	A1...A4		D1…Dn			Yes
-	Program Data Fast	Yes		0x24 	A1...A4		D1…Dn			No
-	Memory Read back	Yes		0x29 	A1...A4		L1...L4			Yes
-	Factory Reset		Yes		0x30 	- 			D1...D16		Yes
-	Get Device Info		No		0x19 	- 			-				Yes
-	Standalone Verif.	Yes		0x26 	A1...A4		L1...L4			Yes
-	Start application	No		0x40 	-			-				No
-*/
-
-/*
-	Connection command is the first command used to establish the
-	connection between the Host and the Target through a specific
-	interface (UART or I2C).
-*/
 int bsl_connect(struct bsl_intf *intf)
 {
 	int rc;
 	uint8_t tx[32];
 	uint8_t rx[64];
 
-	tx[0] = BSL_CMD_HEADER;		// Header
-	tx[1] = 1;					// length lsb
-	tx[2] = 0;					// length msb
-	tx[3] = CMD_CONNECTION;		// cmd
+	tx[0] = BSL_CMD_HEADER;
+	tx[1] = 1;
+	tx[2] = 0;
+	tx[3] = BSL_CMD_CONNECTION;
 	add_crc(tx, sizeof(tx));
 
 	memset(rx, 0, sizeof(rx));
@@ -394,21 +291,16 @@ int bsl_connect(struct bsl_intf *intf)
 	return 0;
 }
 
-
-/*
-	The command is used to get the version information and buffer size
-	available for data transaction
-*/
-int bsl_get_device_info(struct bsl_intf *intf, struct device_info *info)
+int bsl_get_device_info(struct bsl_intf *intf, struct bsl_device_info *info)
 {
 	int rc;
 	uint8_t tx[32];
 	uint8_t rx[64];
 
-	tx[0] = BSL_CMD_HEADER;		// Header
-	tx[1] = 1;					// length lsb
-	tx[2] = 0;					// length msb
-	tx[3] = CMD_GET_DEVICE_INFO;	// cmd
+	tx[0] = BSL_CMD_HEADER;
+	tx[1] = 1;
+	tx[2] = 0;
+	tx[3] = BSL_CMD_GET_DEVICE_INFO;
 	add_crc(tx, sizeof(tx));
 
 	memset(rx, 0, sizeof(rx));
@@ -436,12 +328,6 @@ int bsl_get_device_info(struct bsl_intf *intf, struct device_info *info)
 	return rc;
 }
 
-
-/*
-	The command is used to unlock the bootloader. Only after bootloader
-	unlock, all the protected commands listed in Section 4.3 are processed
-	by the BSL.
-*/
 int bsl_unlock_bootloader(struct bsl_intf *intf)
 {
 	int rc;
@@ -450,10 +336,10 @@ int bsl_unlock_bootloader(struct bsl_intf *intf)
 
 	memset(rx, 0, sizeof(rx));
 
-	tx[0] = BSL_CMD_HEADER;		// Header
-	tx[1] = 33;					// length lsb
-	tx[2] = 0;					// length msb
-	tx[3] = CMD_UNLOCK_BL;		// cmd
+	tx[0] = BSL_CMD_HEADER;
+	tx[1] = 33;
+	tx[2] = 0;
+	tx[3] = BSL_CMD_UNLOCK_BL;
 	memset(&tx[4], 0xff, 32);
 	add_crc(tx, sizeof(tx));
 
@@ -471,7 +357,6 @@ int bsl_unlock_bootloader(struct bsl_intf *intf)
 	return 0;
 }
 
-
 int bsl_mass_erase(struct bsl_intf *intf)
 {
 	int rc;
@@ -480,11 +365,10 @@ int bsl_mass_erase(struct bsl_intf *intf)
 
 	memset(rx, 0, sizeof(rx));
 
-	/* Unlock Bootloader */
-	tx[0] = BSL_CMD_HEADER;		// Header
-	tx[1] = 1;					// length lsb
-	tx[2] = 0;					// length msb
-	tx[3] = CMD_MASS_ERASE;		// cmd
+	tx[0] = BSL_CMD_HEADER;
+	tx[1] = 1;
+	tx[2] = 0;
+	tx[3] = BSL_CMD_MASS_ERASE;
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
@@ -501,7 +385,6 @@ int bsl_mass_erase(struct bsl_intf *intf)
 	return 0;
 }
 
-
 int bsl_readback_data(struct bsl_intf *intf,
 		uint32_t start, uint32_t count)
 {
@@ -514,7 +397,7 @@ int bsl_readback_data(struct bsl_intf *intf,
 	tx[0] = BSL_CMD_HEADER;
 	tx[1] = 9;
 	tx[2] = 0;
-	tx[3] = CMD_MEMORY_READ_BACK;
+	tx[3] = BSL_CMD_MEMORY_READ_BACK;
 	tx[4] = (start >> 0) & 0xff;
 	tx[5] = (start >> 8) & 0xff;
 	tx[6] = (start >> 16) & 0xff;
@@ -553,7 +436,7 @@ int bsl_program_data(struct bsl_intf *intf,
 	tx[0] = BSL_CMD_HEADER;
 	tx[1] = (5 + len) & 0xff;
 	tx[2] = ((5 + len) >> 8) & 0xff;
-	tx[3] = CMD_PROGRAM_DATA;
+	tx[3] = BSL_CMD_PROGRAM_DATA;
 	tx[4] = (address>> 0) & 0xff;
 	tx[5] = (address >> 8) & 0xff;
 	tx[6] = (address >> 16) & 0xff;
@@ -587,7 +470,7 @@ int bsl_verification(struct bsl_intf *intf,
 	tx[0] = BSL_CMD_HEADER;
 	tx[1] = 9;
 	tx[2] = 0;
-	tx[3] = CMD_STANDALONE_VERIFICATION;
+	tx[3] = BSL_CMD_STANDALONE_VERIFICATION;
 	tx[4] = (address>> 0) & 0xff;
 	tx[5] = (address >> 8) & 0xff;
 	tx[6] = (address >> 16) & 0xff;
@@ -622,10 +505,10 @@ int bsl_start_application(struct bsl_intf *intf)
 
 	memset(rx, 0, sizeof(rx));
 
-	tx[0] = BSL_CMD_HEADER;		// Header
-	tx[1] = 1;					// length lsb
-	tx[2] = 0;					// length msb
-	tx[3] = CMD_START_APPLICATION;	// cmd
+	tx[0] = BSL_CMD_HEADER;
+	tx[1] = 1;
+	tx[2] = 0;
+	tx[3] = BSL_CMD_START_APPLICATION;
 	add_crc(tx, sizeof(tx));
 
 	dump_data("TX:", tx, BSL_TX_LEN);
@@ -650,10 +533,10 @@ int bsl_change_baudrate(struct bsl_intf *intf, uint8_t baudrate)
 
 	memset(rx, 0, sizeof(rx));
 
-	tx[0] = BSL_CMD_HEADER;			// Header
-	tx[1] = 2;						// length lsb
-	tx[2] = 0;						// length msb
-	tx[3] = CMD_CHANGE_BAUDRATE;	// cmd
+	tx[0] = BSL_CMD_HEADER;
+	tx[1] = 2;
+	tx[2] = 0;
+	tx[3] = BSL_CMD_CHANGE_BAUDRATE;
 	tx[4] = baudrate;
 	add_crc(tx, sizeof(tx));
 
