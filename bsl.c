@@ -83,7 +83,6 @@ static int uart_write_read(int fd, uint8_t *tx, uint32_t write_len,
 		uint8_t *rx, uint32_t read_len)
 {
 	struct timeval tv;
-	int n;
 	int rc;
 	uint32_t idx = 0;
 	int cnt;
@@ -94,6 +93,7 @@ static int uart_write_read(int fd, uint8_t *tx, uint32_t write_len,
 	assert(rc != -1);
 
 	while (idx < read_len) {
+		int n;
 		FD_ZERO(&fds);
 		FD_SET(fd, &fds);
 
