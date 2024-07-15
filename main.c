@@ -143,7 +143,7 @@ static void usage(char* self)
 "\n"
 "  -n, --no-script         Do not execute init/exit script.\n"
 "\n"
-"  -s, --dont-start        Do not start the application after programming.\n"
+"  -s, --do-start          Start the application after programming.\n"
 "\n"
 "  -v, --verbose           Increase verbosity, can be set multiple times.\n"
 "\n"
