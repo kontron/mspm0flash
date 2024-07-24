@@ -45,7 +45,7 @@ static int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
 	struct i2c_msg message;
 	struct i2c_rdwr_ioctl_data packets;
 
-	if (ioctl(fd, I2C_SLAVE_FORCE, addr) < 0) {
+	if (ioctl(fd, I2C_SLAVE, addr) < 0) {
 		int error_code = errno;
 		printf("ioctl(I2C_SLAVE) failed and returned errno %s \n",
 				strerror(error_code));
