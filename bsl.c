@@ -42,7 +42,7 @@ static void dump_data(char *prefix, uint8_t *buf, int len)
 static int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
 		uint8_t *rx, uint32_t read_len)
 {
-	struct i2c_msg messages[2];
+	struct i2c_msg message;
 	struct i2c_rdwr_ioctl_data packets;
 
 	if (ioctl(fd, I2C_SLAVE_FORCE, addr) < 0) {
@@ -51,27 +51,40 @@ static int i2c_write_read(int fd, uint8_t addr, uint8_t *tx, uint32_t write_len,
 				strerror(error_code));
 	}
 
-	memset(messages, 0, sizeof(messages));
+	memset(&message, 0, sizeof(message));
 	memset(&packets, 0, sizeof(packets));
 
 	/* setup write message */
-	messages[0].addr = addr;
-	messages[0].flags = 0;
-	messages[0].len = write_len;
-	messages[0].buf = tx;
+	message.addr = addr;
+	message.flags = 0;
+	message.len = write_len;
+	message.buf = tx;
 
-	/* setup read message */
-	messages[1].addr = addr;
-	messages[1].flags = I2C_M_RD;
-	messages[1].len = read_len;
-	messages[1].buf = rx;
-
-	packets.msgs = messages;
-	packets.nmsgs = 2;
+	packets.msgs = &message;
+	packets.nmsgs = 1;
 
 	if (ioctl(fd, I2C_RDWR, &packets) < 0) {
 		int error_code = errno;
-		printf("%s: ioctl(I2C_RDWR) failed and returned errno %s \n",
+		printf("%s: ioctl(I2C_RDWR) write failed and returned errno %s \n",
+				__func__, strerror(error_code));
+		return 1;
+	}
+
+	memset(&message, 0, sizeof(message));
+	memset(&packets, 0, sizeof(packets));
+
+	/* setup read message */
+	message.addr = addr;
+	message.flags = I2C_M_RD;
+	message.len = read_len;
+	message.buf = rx;
+
+	packets.msgs = &message;
+	packets.nmsgs = 1;
+
+	if (ioctl(fd, I2C_RDWR, &packets) < 0) {
+		int error_code = errno;
+		printf("%s: ioctl(I2C_RDWR) read failed and returned errno %s \n",
 				__func__, strerror(error_code));
 		return 1;
 	}
