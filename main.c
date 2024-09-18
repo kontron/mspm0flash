@@ -126,7 +126,7 @@ err:
 static void usage(char* self)
 {
     printf(
-"Usage: %s [options] <CMD> <fw-bin-file>\n"
+"Usage: %s [options] <CMD>\n"
 "\n"
 "  Flash and verify firmware binary to a TI MSPM0L microcontroller.\n"
 "\n"
@@ -139,7 +139,7 @@ static void usage(char* self)
 "\n"
 "  -I, --i2c  DEVICE       Using given I2C DEVICE for communication.\n"
 "\n"
-"  -S, --serail  DEVICE    Using given serial DEVICE for communication.\n"
+"  -S, --serial  DEVICE    Using given serial DEVICE for communication.\n"
 "\n"
 "  -n, --no-script         Do not execute init/exit script.\n"
 "\n"
