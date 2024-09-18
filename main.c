@@ -38,8 +38,10 @@ bool o_info = false;
 bool o_erase = false;
 bool o_no_script = false;
 bool o_program = false;
+bool o_crc = false;
+uint32_t o_length = 0;
 bool o_do_start = false;
-char *o_fw_file;
+char *o_fw_file = NULL;
 
 int verbosity = 0;
 
@@ -55,13 +57,12 @@ static void error(const char* fmt, ...)
 }
 
 
-static int load_fw_image(const char *filename, uint8_t **_buf, size_t *_len)
+static int load_fw_image(const char *filename, uint8_t **_buf, size_t *_len, size_t len_pad)
 {
 	int fd;
 	int rc = 0;
 	ssize_t ret;
 	off_t len, ret2;
-	size_t len_pad;
 	uint8_t *buf;
 
 	assert(_buf);
@@ -90,9 +91,11 @@ static int load_fw_image(const char *filename, uint8_t **_buf, size_t *_len)
 	}
 
 	/* pad len to 4k boundary */
-	len_pad = (len + 4095) & (~0xfff);
+	if (len_pad == 0) {
+		len_pad = (len + 4095) & (~0xfff);
+	}
 
-	DEBUG(1, "image_size_padded=%zu\n", len_pad);
+	DEBUG(0, "image_size_padded=%zu\n", len_pad);
 
 	buf = malloc(len_pad);
 	assert(buf);
@@ -113,7 +116,7 @@ static int load_fw_image(const char *filename, uint8_t **_buf, size_t *_len)
 		goto err_close;
 	}
 
-	*_len = len;
+	*_len = len_pad;
 	*_buf = buf;
 
 err_close:
@@ -143,6 +146,8 @@ static void usage(char* self)
 "\n"
 "  -n, --no-script         Do not execute init/exit script.\n"
 "\n"
+"  -l, --length            Length of CRC to calculate.\n"
+"\n"
 "  -s, --do-start          Start the application after programming.\n"
 "\n"
 "  -v, --verbose           Increase verbosity, can be set multiple times.\n"
@@ -155,6 +160,7 @@ static void usage(char* self)
 "    prog <fw-bin-file>   Program the firmware data.\n"
 "    info                 Display the device info.\n"
 "    erase                Erase the full flash.\n"
+"    crc [<fw-bin-file>]  Calculate the CRC or read from device.\n"
 "\n",
         self);
 }
@@ -231,7 +237,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 	uint32_t crc_file;
 	uint32_t crc_bsl;
 
-	if (load_fw_image(filename, &fw_buf, &total_len) != 0) {
+	if (load_fw_image(filename, &fw_buf, &total_len, 0) != 0) {
 		return -1;
 	}
 
@@ -305,6 +311,51 @@ out_free:
 	return rc;
 }
 
+int cmd_crc(struct bsl_intf *intf, char *filename, uint32_t length)
+{
+	int rc = 0;
+	uint32_t crc;
+
+	if (filename != NULL) {
+		uint8_t *fw_buf = NULL;
+		size_t total_len = 0;
+		DEBUG(0, "Load: %s, len=%x\n", filename, length);
+
+		if (load_fw_image(filename, &fw_buf, &total_len, length) != 0) {
+			return -1;
+		}
+
+		crc = crc32(fw_buf, total_len);
+
+		printf("0x%08x 0x%lx\n", crc, total_len);
+	} else {
+		if (length == 0) {
+			printf("ERROR: length need to be specified\n");
+			goto out;
+		} else {
+
+			if (length % 1024 != 0) {
+				printf("ERROR: length must be multiples of 1024\n");
+				goto out;
+			}
+		}
+
+		if (bsl_unlock_bootloader(intf) != 0) {
+			printf("ERROR: unlock device\n");
+			goto out;
+		}
+
+		if (bsl_verification(intf, 0, length, &crc) != 0) {
+			printf("ERROR: bsl_verification\n");
+			goto out;
+		}
+
+		printf("0x%08x 0x%x\n", crc, length);
+	}
+out:
+	return rc;
+}
+
 static void version()
 {
 	printf("%s\n", VERSION);
@@ -315,6 +366,7 @@ static struct option bsl_options[] = {
 	{ "baud",       required_argument,  NULL,   'b'},
 	{ "uart",       required_argument,  NULL,   'S'},
 	{ "i2c",        required_argument,  NULL,   'I'},
+	{ "length",     required_argument,  NULL,   'l'},
 	{ "do-start",   no_argument,        NULL,   's'},
 	{ "no-script",  no_argument,        NULL,   'n'},
 	{ "version",    no_argument,        NULL,   'V'},
@@ -327,23 +379,28 @@ int main(int argc, char **argv)
 {
 	int rc = -1;
 	int opt;
+	char **endptr = NULL;
+	bool device_connection = true;
 
 	struct bsl_intf intf = {0};
 
-	while ((opt = getopt_long(argc, argv, "a:b:I:S:hnsvV",
+	while ((opt = getopt_long(argc, argv, "a:b:I:l:S:hnsvV",
 			bsl_options, NULL))!= -1) {
 		switch (opt) {
 			case 'a':
-				intf.i2c_address = atoi(optarg);
+				intf.i2c_address = strtol(optarg, endptr, 0);
 				break;
 			case 'b':
-				o_serial_baudrate = atoi(optarg);
+				o_serial_baudrate = strtol(optarg, endptr, 0);
 				break;
 			case 'I':
 				o_i2c_device = optarg;
 				break;
 			case 'S':
 				o_serial_device = optarg;
+				break;
+			case 'l':
+				o_length = strtol(optarg, endptr, 0);
 				break;
 			case 'h':
 				usage(argv[0]);
@@ -386,56 +443,66 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		o_fw_file = argv[optind+1];
+	} else if (!strcmp(argv[optind], "crc")) {
+		o_crc = true;
+		if ((argc - optind) >= 2) {
+			o_fw_file = argv[optind+1];
+			device_connection = false;
+			o_no_script = true;
+		}
 	} else {
 		usage(argv[0]);
 		printf("ERROR: unsupported CMD %s\n", argv[optind]);
 		exit(1);
 	}
 
-	if (o_i2c_device == NULL && o_serial_device == NULL) {
-		printf("ERROR: either I2C or SERIAL interface required\n");
-		exit(1);
-	}
-
-	if (o_i2c_device != NULL && strlen(o_i2c_device)) {
-		if ((intf.fd = open(o_i2c_device, O_RDWR)) < 0) {
-			printf("ERROR: cannot open device %s\n", o_i2c_device);
-			return -1;
-		}
-		intf.type = INTERFACE_TYPE_I2C;
-		intf.i2c_address = o_i2c_address;
-	} else if (o_serial_device != NULL && strlen(o_serial_device)) {
-
-		if ((intf.fd = open(o_serial_device, O_RDWR | O_NONBLOCK | O_NOCTTY)) < 0) {
-			printf("ERROR: cannot open device %s\n", o_serial_device);
-			return -1;
+	if (device_connection) {
+		if (o_i2c_device == NULL && o_serial_device == NULL) {
+			printf("ERROR: either I2C or SERIAL interface required\n");
+			exit(1);
 		}
 
-		intf.type = INTERFACE_TYPE_UART;
-		intf.baudrate = o_serial_baudrate;
+		if (o_i2c_device != NULL && strlen(o_i2c_device)) {
+			if ((intf.fd = open(o_i2c_device, O_RDWR)) < 0) {
+				printf("ERROR: cannot open device %s\n", o_i2c_device);
+				return -1;
+			}
+			intf.type = INTERFACE_TYPE_I2C;
+			intf.i2c_address = o_i2c_address;
+		} else if (o_serial_device != NULL && strlen(o_serial_device)) {
 
-	    tcflush(intf.fd, TCOFLUSH);
-		tcflush(intf.fd, TCIFLUSH);
+			if ((intf.fd = open(o_serial_device, O_RDWR | O_NONBLOCK | O_NOCTTY)) < 0) {
+				printf("ERROR: cannot open device %s\n", o_serial_device);
+				return -1;
+			}
 
-		rc = tcgetattr(intf.fd, &old_tio);
-		assert(rc != -1);
+			intf.type = INTERFACE_TYPE_UART;
+			intf.baudrate = o_serial_baudrate;
 
-		uart_set_baudrate(intf.fd, 9600);
-	}
+		    tcflush(intf.fd, TCOFLUSH);
+			tcflush(intf.fd, TCIFLUSH);
 
+			rc = tcgetattr(intf.fd, &old_tio);
+			assert(rc != -1);
 
-	if (!o_no_script) {
-		rc = script_init();
-		if (rc) {
-			printf("ERROR: script init\n");
+			uart_set_baudrate(intf.fd, 9600);
+		}
+
+		if (!o_no_script) {
+			rc = script_init();
+			if (rc) {
+				printf("ERROR: script init\n");
+				goto out_close;
+			}
+		}
+
+		if (bsl_connect(&intf) != 0) {
+			printf("ERROR: connect\n");
 			goto out_close;
 		}
 	}
 
-	if (bsl_connect(&intf) != 0) {
-		printf("ERROR: connect\n");
-		goto out_close;
-	}
+
 
 	if (intf.type == INTERFACE_TYPE_UART && intf.baudrate != DEFAULT_BAUDRATE) {
 		int baud;
@@ -479,10 +546,14 @@ int main(int argc, char **argv)
 		rc = cmd_info(&intf);
 	} else if (o_program) {
 		rc = cmd_prog(&intf, o_fw_file);
+	} else if (o_crc) {
+		rc = cmd_crc(&intf, o_fw_file, o_length);
 	}
 
-	if (!o_no_script) {
-		script_exit();
+	if (device_connection) {
+		if (!o_no_script) {
+			script_exit();
+		}
 	}
 
 out_close:
