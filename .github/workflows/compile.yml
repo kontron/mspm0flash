@@ -1,0 +1,26 @@
+name: compile
+
+on: [push, pull_request]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build_and_test:
+    name: Compile on ${{matrix.compiler}}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        compiler: ["gcc-11", "gcc-12",  "clang-14", "clang-15"]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get -y install ${{matrix.compiler}}
+
+      - name: Compile
+        run: make CC=${{matrix.compiler}}
