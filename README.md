@@ -12,7 +12,7 @@ https://www.ti.com/lit/pdf/slaae88
 
 ## Usage
 
-    Usage: ./mspm0flash [options] <CMD> <fw-bin-file>
+    Usage: ./mspm0flash [options] <CMD>
 
       Flash and verify firmware binary to a TI MSPM0L microcontroller.
 
@@ -25,11 +25,13 @@ https://www.ti.com/lit/pdf/slaae88
 
       -I, --i2c  DEVICE       Using given I2C DEVICE for communication.
 
-      -S, --serail  DEVICE    Using given serial DEVICE for communication.
+      -S, --serial  DEVICE    Using given serial DEVICE for communication.
 
       -n, --no-script         Do not execute init/exit script.
 
-      -s, --dont-start        Do not start the application after programming.
+      -l, --length            Length of CRC to calculate.
+
+      -s, --do-start          Start the application after programming.
 
       -v, --verbose           Increase verbosity, can be set multiple times.
 
@@ -41,6 +43,7 @@ https://www.ti.com/lit/pdf/slaae88
         prog <fw-bin-file>   Program the firmware data.
         info                 Display the device info.
         erase                Erase the full flash.
+        crc [<fw-bin-file>]  Calculate the CRC or read from device.
 
 ### Program
 
