@@ -305,10 +305,6 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 	}
 	printf("OK\n");
 
-	if (o_do_start) {
-		bsl_start_application(intf);
-	};
-
 out_free:
 	free(fw_buf);
 
@@ -559,6 +555,11 @@ int main(int argc, char **argv)
 	} else if (o_crc) {
 		rc = cmd_crc(&intf, o_fw_file, o_length);
 	}
+
+	if (o_do_start) {
+		bsl_start_application(&intf);
+	};
+
 
 	if (device_connection) {
 		if (!o_no_script) {
