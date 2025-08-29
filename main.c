@@ -483,7 +483,7 @@ int main(int argc, char **argv)
 			intf.type = INTERFACE_TYPE_UART;
 			intf.baudrate = o_serial_baudrate;
 
-		    tcflush(intf.fd, TCOFLUSH);
+			tcflush(intf.fd, TCOFLUSH);
 			tcflush(intf.fd, TCIFLUSH);
 
 			rc = tcgetattr(intf.fd, &old_tio);
