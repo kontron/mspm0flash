@@ -38,6 +38,7 @@ uint32_t o_serial_baudrate = DEFAULT_BAUDRATE;
 bool o_info = false;
 bool o_erase = false;
 bool o_no_script = false;
+bool o_no_connect = false;
 bool o_program = false;
 bool o_crc = false;
 uint32_t o_length = 0;
@@ -146,6 +147,8 @@ static void usage(char* self)
 "  -S, --serial  DEVICE    Using given serial DEVICE for communication.\n"
 "\n"
 "  -n, --no-script         Do not execute init/exit script.\n"
+"\n"
+"  -N  --no-connect        Do send connect command to BSL.\n"
 "\n"
 "  -l, --length            Length of CRC to calculate.\n"
 "\n"
@@ -370,6 +373,7 @@ static struct option bsl_options[] = {
 	{ "length",     required_argument,  NULL,   'l'},
 	{ "do-start",   no_argument,        NULL,   's'},
 	{ "no-script",  no_argument,        NULL,   'n'},
+	{ "no-connect", no_argument,        NULL,   'N'},
 	{ "version",    no_argument,        NULL,   'V'},
 	{ "verbose",    no_argument,        NULL,   'v'},
 	{ "help",       no_argument,        NULL,   'h'},
@@ -385,7 +389,7 @@ int main(int argc, char **argv)
 
 	struct bsl_intf intf = {0};
 
-	while ((opt = getopt_long(argc, argv, "a:b:I:l:S:hnsvV",
+	while ((opt = getopt_long(argc, argv, "a:b:I:l:S:hnNsvV",
 			bsl_options, NULL))!= -1) {
 		switch (opt) {
 			case 'a':
@@ -409,6 +413,9 @@ int main(int argc, char **argv)
 				break;
 			case 'n':
 				o_no_script = true;
+				break;
+			case 'N':
+				o_no_connect = true;
 				break;
 			case 's':
 				o_do_start = true;
@@ -497,9 +504,11 @@ int main(int argc, char **argv)
 			}
 		}
 
-		if (bsl_connect(&intf) != 0) {
-			printf("ERROR: connect\n");
-			goto out_close;
+		if (!o_no_connect) {
+			if (bsl_connect(&intf) != 0) {
+				printf("ERROR: connect\n");
+				goto out_close;
+			}
 		}
 	}
 
