@@ -7,8 +7,8 @@ O ?= $(TOPDIR)
 
 o := $(O)/
 
-CC := $(CROSS_COMPILE)gcc
-AR := $(CROSS_COMPILE)ar
+CC ?= $(CROSS_COMPILE)gcc
+AR ?= $(CROSS_COMPILE)ar
 INSTALL ?= install
 
 # install directories
