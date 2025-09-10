@@ -296,7 +296,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 
 	if (bsl_verification(intf, 0, pad_len, &crc_bsl) != 0) {
 		printf("ERROR: bsl_verification\n");
-		rc = -1;
+		rc = 1;
 		goto out_free;
 	}
 
@@ -304,7 +304,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 
 	if (crc_file != crc_bsl) {
 		printf("FAIL\n");
-		rc = -1;
+		rc = 1;
 		goto out_free;
 	}
 	printf("OK\n");
@@ -382,7 +382,7 @@ static struct option bsl_options[] = {
 
 int main(int argc, char **argv)
 {
-	int rc = -1;
+	int rc = 1;
 	int opt;
 	char **endptr = NULL;
 	bool device_connection = true;
