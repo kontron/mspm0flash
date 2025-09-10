@@ -248,6 +248,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 	printf("UNLOCK .. ");
 	if (bsl_unlock_bootloader(intf) != 0) {
 		printf("ERROR: unlock device\n");
+		rc = 1;
 		goto out_free;
 	}
 	printf("OK\n");
@@ -255,6 +256,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 	printf("ERASE .. ");
 	if (bsl_mass_erase(intf) != 0) {
 		printf("ERROR: mass erase device\n");
+		rc = 1;
 		goto out_free;
 	}
 	printf("OK\n");
@@ -274,6 +276,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 
 		if (bsl_program_data(intf, address, p, write_len) != 0) {
 			printf("ERROR: program data\n");
+			rc = 1;
 			goto out_free;
 		}
 
@@ -293,6 +296,7 @@ int cmd_prog(struct bsl_intf *intf, char *filename)
 
 	if (bsl_verification(intf, 0, pad_len, &crc_bsl) != 0) {
 		printf("ERROR: bsl_verification\n");
+		rc = -1;
 		goto out_free;
 	}
 
