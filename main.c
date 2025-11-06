@@ -148,7 +148,7 @@ static void usage(char* self)
 "\n"
 "  -n, --no-script         Do not execute init/exit script.\n"
 "\n"
-"  -N  --no-connect        Do send connect command to BSL.\n"
+"  -N  --no-connect        Do not send connect command to BSL.\n"
 "\n"
 "  -l, --length            Length of CRC to calculate.\n"
 "\n"
