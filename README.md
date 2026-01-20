@@ -29,7 +29,7 @@ https://www.ti.com/lit/pdf/slaae88
 
       -n, --no-script         Do not execute init/exit script.
 
-      -N  --no-connect        Do not send connect command to BSL.
+      -N, --no-connect        Do not send connect command to BSL.
 
       -l, --length            Length of CRC to calculate.
 
